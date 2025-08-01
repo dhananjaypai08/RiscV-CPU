@@ -301,5 +301,5 @@ fn main() {
     println!("x3 should be 63: {}", cpu.read_register(3));
     println!("x4 should be -21 (as u64): {}", cpu.read_register(4));
     println!("x5 should be 42^21=51: {}", cpu.read_register(5));
-    extended_cpu::all();
+    // extended_cpu::all();
 }
