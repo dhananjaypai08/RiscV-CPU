@@ -1,5 +1,11 @@
 # RISC-V ISA Implementation Reference
 
+## To Implement 
+**Note** : You can add your own program instructions in `main` function or can just run 
+```sh
+cargo run
+```
+
 ## RISC-V Registers
 
 | Register | ABI Name | Description         | Saved By |
