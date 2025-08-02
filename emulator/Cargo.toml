@@ -1,0 +1,7 @@
+[package]
+name = "emulator"
+version = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+winterfell = { workspace = true }

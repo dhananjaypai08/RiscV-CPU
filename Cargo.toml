@@ -1,7 +1,11 @@
-[package]
+[workspace]
+resolver = "3"
+members = ["emulator"]
+
+[workspace.package]
 name = "riscv_cpu"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
 winterfell = "0.13.1"

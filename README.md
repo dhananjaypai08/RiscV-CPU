@@ -3,7 +3,7 @@
 ## To Implement 
 **Note** : You can add your own program instructions in `main` function or can just run 
 ```sh
-cargo run
+cargo run -p emulator # runs the interpreter with a fixed program
 ```
 
 ## RISC-V Registers
