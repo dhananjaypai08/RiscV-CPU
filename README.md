@@ -323,3 +323,286 @@ Each hex digit = 4 binary bits. Example:
 - **101 (BGE):** Branch if Greater or Equal (signed)
 - **110 (BLTU):** Branch if Less Than (unsigned)
 - **111 (BGEU):** Branch if Greater or Equal (unsigned)
+
+## Assembly to Machine Code Conversion Flow
+
+This section explains the complete process of converting RISC-V assembly instructions to machine code and vice versa, with detailed mathematical breakdowns.
+
+### Understanding RISC-V Instruction Formats
+
+RISC-V uses different instruction formats for different types of operations:
+
+#### **I-Type Format (Immediate Instructions)**
+```
+31    20 19 15 14 12 11  7 6   0
++-------+----+----+----+------+
+|  imm  |rs1 |f3 | rd |opcode|
++-------+----+----+----+------+
+ 12 bits 5b  3b  5b  7 bits
+```
+
+#### **R-Type Format (Register-Register Instructions)**
+```
+31    25 24 20 19 15 14 12 11  7 6   0
++-------+----+----+----+----+------+
+| funct7| rs2| rs1|f3 | rd |opcode|
++-------+----+----+----+----+------+
+  7 bits 5b  5b  3b  5b  7 bits
+```
+
+### RISC-V Opcode and Function Code Tables
+
+#### **Primary Opcodes (7-bit)**
+| Instruction Type | Opcode (binary) | Opcode (hex) | Examples |
+|------------------|-----------------|--------------|----------|
+| OP-IMM           | 0010011         | 0x13         | addi, slti, xori |
+| OP (Register)    | 0110011         | 0x33         | add, sub, xor |
+| LOAD             | 0000011         | 0x03         | lw, lb, lh |
+| STORE            | 0100011         | 0x23         | sw, sb, sh |
+| BRANCH           | 1100011         | 0x63         | beq, bne, blt |
+
+#### **OP-IMM funct3 Codes (I-type)**
+| Instruction | funct3 (binary) | funct3 (decimal) |
+|-------------|-----------------|------------------|
+| addi        | 000             | 0                |
+| slti        | 010             | 2                |
+| sltiu       | 011             | 3                |
+| xori        | 100             | 4                |
+| ori         | 110             | 6                |
+| andi        | 111             | 7                |
+
+#### **OP funct3 and funct7 Codes (R-type)**
+| Instruction | funct3 (binary) | funct7 (binary) |
+|-------------|-----------------|-----------------|
+| add         | 000             | 0000000         |
+| sub         | 000             | 0100000         |
+| sll         | 001             | 0000000         |
+| slt         | 010             | 0000000         |
+| sltu        | 011             | 0000000         |
+| xor         | 100             | 0000000         |
+| srl         | 101             | 0000000         |
+| sra         | 101             | 0100000         |
+| or          | 110             | 0000000         |
+| and         | 111             | 0000000         |
+
+### Detailed Conversion Example 1: I-Type Instruction
+
+**Assembly:** `addi x3, x0, 21`
+
+#### Step 1: Parse Assembly Components
+```
+addi x3, x0, 21
+ |   |   |   |
+ |   |   |   └── immediate value = 21
+ |   |   └────── source register = x0 = register 0
+ |   └────────── destination register = x3 = register 3
+ └────────────── instruction mnemonic = addi
+```
+
+#### Step 2: Look Up Instruction Encoding
+```
+Instruction: addi
+- Type: I-type (immediate)
+- opcode: 0010011 (from OP-IMM table) = 0x13
+- funct3: 000 (from addi table) = 0
+```
+
+#### Step 3: Convert Values to Binary Fields
+```
+rd     = x3 = 3    = 00011 (5 bits)
+rs1    = x0 = 0    = 00000 (5 bits)
+funct3 = addi      = 000 (3 bits) [looked up from table]
+opcode = OP-IMM    = 0010011 (7 bits) [looked up from table]
+imm    = 21        = 000000010101 (12 bits)
+```
+
+#### Step 4: Arrange Fields in I-Type Format
+```
+31    20 19 15 14 12 11  7 6   0
+000000010101 00000 000 00011 0010011
+    21        x0   add  x3   OP-IMM
+```
+
+#### Step 5: Convert to Single Binary Number
+```
+00000001010100000000001110010011
+```
+
+#### Step 6: Convert Binary to Hexadecimal
+```
+Group into 4-bit chunks:
+0000 0001 0101 0000 0000 0001 1001 0011
+  0    1    5    0    0    1    9    3
+= 0x01500193
+```
+
+#### Step 7: Little-Endian Byte Storage
+```
+0x01500193 splits into bytes: [01] [50] [01] [93]
+
+RISC-V uses little-endian storage (least significant byte first):
+Memory layout: [0x93] [0x01] [0x50] [0x01]
+```
+
+#### Step 8: Byte Field Breakdown
+```
+Your program bytes: 0x93, 0x01, 0x50, 0x01
+
+Byte 0: 0x93 = 10010011
+  bits 6:0   = 0010011 = opcode (OP-IMM)
+  bit 7      = 1 = rd[0] (part of x3)
+
+Byte 1: 0x01 = 00000001
+  bits 3:0   = 0001 = rd[4:1] (completes x3 = 00011)
+  bits 6:4   = 000 = funct3 (ADDI)
+  bit 7      = 0 = rs1[0] (part of x0)
+
+Byte 2: 0x50 = 01010000
+  bits 3:0   = 0000 = rs1[4:1] (completes x0 = 00000)
+  bits 7:4   = 0101 = imm[3:0] (part of 21)
+
+Byte 3: 0x01 = 00000001
+  bits 7:0   = 00000001 = imm[11:4] (completes 21 = 000000010101)
+```
+
+### Detailed Conversion Example 2: R-Type Instruction
+
+**Assembly:** `add x4, x2, x3`
+
+#### Step 1: Parse Assembly Components
+```
+add x4, x2, x3
+ |  |   |   |
+ |  |   |   └── source register 2 = x3 = register 3
+ |  |   └────── source register 1 = x2 = register 2
+ |  └────────── destination register = x4 = register 4
+ └───────────── instruction mnemonic = add
+```
+
+#### Step 2: Look Up Instruction Encoding
+```
+Instruction: add
+- Type: R-type (register-register)
+- opcode: 0110011 (from OP table) = 0x33
+- funct3: 000 (from add table) = 0
+- funct7: 0000000 (from add table) = 0
+```
+
+#### Step 3: Convert Values to Binary Fields
+```
+rd     = x4 = 4    = 00100 (5 bits)
+rs1    = x2 = 2    = 00010 (5 bits)
+rs2    = x3 = 3    = 00011 (5 bits)
+funct3 = add       = 000 (3 bits) [looked up from table]
+funct7 = add       = 0000000 (7 bits) [looked up from table]
+opcode = OP        = 0110011 (7 bits) [looked up from table]
+```
+
+#### Step 4: Arrange Fields in R-Type Format
+```
+31    25 24 20 19 15 14 12 11  7 6   0
+0000000 00011 00010 000 00100 0110011
+   0     x3    x2   add  x4    OP
+```
+
+#### Step 5: Convert to Single Binary Number
+```
+00000000001100010000001000110011
+```
+
+#### Step 6: Convert Binary to Hexadecimal
+```
+Group into 4-bit chunks:
+0000 0000 0011 0001 0000 0010 0011 0011
+  0    0    3    1    0    2    3    3
+= 0x00310233
+```
+
+#### Step 7: Little-Endian Byte Storage
+```
+0x00310233 splits into bytes: [00] [31] [02] [33]
+
+Little-endian storage:
+Memory layout: [0x33] [0x02] [0x31] [0x00]
+```
+
+#### Step 8: Byte Field Breakdown
+```
+Your program bytes: 0x33, 0x02, 0x31, 0x00
+
+Byte 0: 0x33 = 00110011
+  bits 6:0   = 0110011 = opcode (OP)
+  bit 7      = 0 = rd[0] (part of x4)
+
+Byte 1: 0x02 = 00000010
+  bits 3:0   = 0010 = rd[4:1] (completes x4 = 00100)
+  bits 6:4   = 000 = funct3 (ADD)
+  bit 7      = 0 = rs1[0] (part of x2)
+
+Byte 2: 0x31 = 00110001
+  bits 3:0   = 0001 = rs1[4:1] (completes x2 = 00010)
+  bits 7:4   = 0011 = rs2[3:0] (part of x3)
+
+Byte 3: 0x00 = 00000000
+  bit 0      = 0 = rs2[4] (completes x3 = 00011)
+  bits 7:1   = 0000000 = funct7 (ADD)
+```
+
+### Reverse Engineering: Machine Code to Assembly
+
+To convert machine code back to assembly, reverse the process:
+
+#### For bytes `0x93, 0x01, 0x50, 0x01`:
+
+1. **Combine to 32-bit word (little-endian):**
+   ```
+   0x01500193
+   ```
+
+2. **Extract fields using bit masks:**
+   ```
+   opcode = instruction & 0x7F          = 0x13 (OP-IMM)
+   rd     = (instruction >> 7) & 0x1F   = 3 (x3)
+   funct3 = (instruction >> 12) & 0x07  = 0 (ADDI)
+   rs1    = (instruction >> 15) & 0x1F  = 0 (x0)
+   imm    = (instruction >> 20) & 0xFFF = 21
+   ```
+
+3. **Decode instruction:**
+   ```
+   opcode 0x13 + funct3 0 = addi
+   Result: addi x3, x0, 21
+   ```
+
+### Key Mathematical Concepts
+
+#### **Bit Manipulation Operations**
+- **AND (&):** Used to extract specific bits: `value & mask`
+- **OR (|):** Used to combine bit fields: `field1 | field2`
+- **Shift Left (<<):** Moves bits left: `value << 3` multiplies by 8
+- **Shift Right (>>):** Moves bits right: `value >> 3` divides by 8
+
+#### **Little-Endian Storage**
+- **Concept:** Least significant byte stored at lowest memory address
+- **32-bit word 0x12345678:** Stored as bytes [0x78, 0x56, 0x34, 0x12]
+- **Why important:** CPU architecture determines byte ordering in memory
+
+#### **Sign Extension**
+- **Purpose:** Extend smaller signed numbers to larger bit widths
+- **Method:** If MSB = 1, fill upper bits with 1s; if MSB = 0, fill with 0s
+- **Example:** 12-bit immediate -1 (0xFFF) extends to 0xFFFFFFFF in 32-bit
+
+#### **Two's Complement Arithmetic**
+- **Negative numbers:** Invert all bits and add 1
+- **Range:** n-bit signed number ranges from -2^(n-1) to 2^(n-1)-1
+- **Example:** 12-bit immediate range: -2048 to +2047
+
+### Instruction Execution Flow
+
+1. **Fetch:** CPU reads 4 bytes from memory at PC address
+2. **Decode:** Extract opcode, determine instruction type, extract fields
+3. **Execute:** Perform operation based on instruction type
+4. **Writeback:** Store result in destination register
+5. **Update PC:** Advance program counter to next instruction
+
+This systematic approach ensures every RISC-V instruction follows the same encoding and decoding principles, making the ISA both regular and predictable.
