@@ -374,13 +374,24 @@ fn main() {
 
     let program = vec![
         // addi x2, x0, 42    (x2 = 42)
-        0x13, 0x01, 0xa0, 0x02,  
-        // addi x3, x0, 21    (x3 = 21) 
-        0x93, 0x01, 0x50, 0x01,  
+        0x13, 0x01, 0xa0, 0x02,
+        // addi x3, x0, 21    (x3 = 21)
+        0x93, 0x01, 0x50, 0x01,
         // add x4, x2, x3     (x4 = x2 + x3 = 63)
-        0x33, 0x02, 0x31, 0x00,  
+        0x33, 0x02, 0x31, 0x00,
         // sub x5, x2, x3     (x5 = x2 - x3 = 21)
-        0xb3, 0x02, 0x31, 0x40,  
+        0xb3, 0x02, 0x31, 0x40,
+
+        // lui x6, 0x1        (x6 = 0x1000)
+        0xb7, 0x00, 0x10, 0x00,
+        // slt x7, x2, x3     (x7 = x2 < x3 ? 1 : 0)
+        0x33, 0x03, 0x73, 0x00,
+        // sw x4, 0(x6)       (store x4 at address x6)
+        0x23, 0xa0, 0x04, 0x00,
+        // lw x8, 0(x6)       (load x8 from address x6)
+        0x03, 0x41, 0x30, 0x00,
+        // beq x8, x4, 8      (branch if x8 == x4, PC+8)
+        0x63, 0x04, 0x84, 0x00,
     ];
 
     cpu.load_program(&program, 0x1000);
@@ -389,7 +400,7 @@ fn main() {
     cpu.print_registers();
     println!("\nExecuting program...\n");
 
-    if let Err(e) = cpu.run(4) {
+    if let Err(e) = cpu.run(program.len()) {
         println!("Error: {}", e);
     }
 
@@ -401,6 +412,14 @@ fn main() {
     println!("x3 should be 21: {}", cpu.read_register(3));
     println!("x4 should be 63: {}", cpu.read_register(4));
     println!("x5 should be 21: {}", cpu.read_register(5));
+
+    // Additional results for extended instructions
+    println!("x6 (lui, should be 0x1000): 0x{:x}", cpu.read_register(6));
+    println!("x7 (slt, should be 0 if x2 >= x3): {}", cpu.read_register(7));
+    println!("x8 (lw, loaded from [x6], should be 63): {}", cpu.read_register(8));
+    let mem_x6 = cpu.read_memory(cpu.read_register(6), 4);
+    println!("Memory at [x6] (should be 63 from sw): {}", mem_x6);
+    println!("PC after execution (for beq): 0x{:x}", cpu.pc);
 
     // Export trace for winterfell
     let trace = cpu.export_trace_for_winterfell();
