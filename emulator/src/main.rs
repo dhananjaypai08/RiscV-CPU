@@ -72,6 +72,7 @@ impl Cpu {
     }
 
     pub fn step(&mut self) -> Result<(), String> {
+        let pc_before = self.pc;
         let inst = self.fetch_instruction();
         let registers_before = self.registers.clone();
         
@@ -79,12 +80,12 @@ impl Cpu {
         
         // Record execution step for winterfell
         let registers_after = self.registers.clone();
-        self.record_execution_step(inst, registers_before, registers_after);
+        self.record_execution_step(inst, pc_before, registers_before, registers_after);
         
         Ok(())
     }
 
-    fn record_execution_step(&mut self, inst: u32, registers_before: [u64; 32], registers_after: [u64; 32]) {
+    fn record_execution_step(&mut self, inst: u32, pc: u64, registers_before: [u64; 32], registers_after: [u64; 32]) {
         let opcode = (inst & 0x7f) as u8;
         let rd = ((inst >> 7) & 0x1f) as u8;
         let rs1 = ((inst >> 15) & 0x1f) as u8;
@@ -100,7 +101,7 @@ impl Cpu {
         };
 
         let step = ExecutionStep {
-            pc: self.pc - 4,
+            pc,
             instruction: inst,
             opcode,
             rd,

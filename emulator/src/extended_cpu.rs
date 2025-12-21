@@ -71,7 +71,7 @@ impl ExtendedCpu {
         }
     }
 
-    pub fn read_memory(&mut self, addr: u64, bytes: usize) -> u64 {
+    pub fn read_memory(&self, addr: u64, bytes: usize) -> u64 {
         let mut result = 0u64;
         for i in 0..bytes {
             if let Some(&byte) = self.memory.get(&(addr + i as u64)) {
@@ -110,7 +110,7 @@ impl ExtendedCpu {
         }
     }
 
-    pub fn fetch_instruction(&mut self) -> u32 {
+    pub fn fetch_instruction(&self) -> u32 {
         let inst = self.read_memory(self.pc, 4) as u32;
         if self.debug_mode {
             println!("Fetch: PC=0x{:08x}, instruction=0x{:08x}", self.pc, inst);
@@ -262,12 +262,30 @@ impl ExtendedCpu {
             },
             (0b0000001, 0b010) => {
                 // MULHSU: Multiply high (signed x unsigned)
-                let result = ((rs1_val as i64 as i128) * (rs2_val as u128 as i128)) >> 64;
+                // rs1 is signed i64, rs2 is unsigned u64
+                // Compute high 64 bits of (rs1_signed * rs2_unsigned)
+                let rs1_signed = rs1_val as i64;
+                let rs2_unsigned = rs2_val;
+                
+                // Use i128 arithmetic: sign-extend rs1, zero-extend rs2
+                let product = if rs1_signed >= 0 {
+                    // Positive * unsigned: straightforward unsigned multiplication
+                    ((rs1_signed as u128) * (rs2_unsigned as u128)) >> 64
+                } else {
+                    // Negative * unsigned: compute using two's complement
+                    // (rs1_signed * rs2_unsigned) as i128, then take high 64 bits
+                    let abs_rs1 = (-rs1_signed) as u128;
+                    let full_product = abs_rs1 * (rs2_unsigned as u128);
+                    // Negate the result (two's complement)
+                    let negated = (!full_product).wrapping_add(1);
+                    (negated >> 64) as u64
+                };
+                
                 if self.debug_mode {
                     println!("MULHSU: {} * {} = {} (upper bits, mixed)", 
-                             rs1_val as i64, rs2_val, result);
+                             rs1_signed, rs2_unsigned, product);
                 }
-                result as u64
+                product
             },
             (0b0000001, 0b011) => {
                 // MULHU: Multiply high (unsigned x unsigned)
@@ -280,14 +298,13 @@ impl ExtendedCpu {
             },
             (0b0000001, 0b100) => {
                 // DIV: Divide (signed)
+                // RISC-V spec: division by zero returns -1, overflow (MIN/-1) returns MIN
                 if rs2_val == 0 {
-                    // Division by zero results in -1 for signed division
-                    0xffffffffffffffff
-                } else if rs1_val == 0x8000000000000000 && rs2_val as i64 == -1 {
-                    // Overflow case: most negative / -1
+                    0xffffffffffffffffu64 as i64 as u64
+                } else if rs1_val == 0x8000000000000000 && (rs2_val as i64) == -1 {
                     0x8000000000000000
                 } else {
-                    let result = (rs1_val as i64) / (rs2_val as i64);
+                    let result = (rs1_val as i64).wrapping_div(rs2_val as i64);
                     if self.debug_mode {
                         println!("DIV: {} / {} = {}", rs1_val as i64, rs2_val as i64, result);
                     }
@@ -296,11 +313,11 @@ impl ExtendedCpu {
             },
             (0b0000001, 0b101) => {
                 // DIVU: Divide (unsigned)
+                // RISC-V spec: division by zero returns 2^XLEN - 1
                 if rs2_val == 0 {
-                    // Division by zero results in all 1s for unsigned division
                     0xffffffffffffffff
                 } else {
-                    let result = rs1_val / rs2_val;
+                    let result = rs1_val.wrapping_div(rs2_val);
                     if self.debug_mode {
                         println!("DIVU: {} / {} = {}", rs1_val, rs2_val, result);
                     }
@@ -309,14 +326,13 @@ impl ExtendedCpu {
             },
             (0b0000001, 0b110) => {
                 // REM: Remainder (signed)
+                // RISC-V spec: remainder by zero returns dividend, overflow (MIN/-1) returns 0
                 if rs2_val == 0 {
-                    // Remainder by zero returns dividend
                     rs1_val
-                } else if rs1_val == 0x8000000000000000 && rs2_val as i64 == -1 {
-                    // Overflow case: remainder is 0
+                } else if rs1_val == 0x8000000000000000 && (rs2_val as i64) == -1 {
                     0
                 } else {
-                    let result = (rs1_val as i64) % (rs2_val as i64);
+                    let result = (rs1_val as i64).wrapping_rem(rs2_val as i64);
                     if self.debug_mode {
                         println!("REM: {} % {} = {}", rs1_val as i64, rs2_val as i64, result);
                     }
@@ -325,11 +341,11 @@ impl ExtendedCpu {
             },
             (0b0000001, 0b111) => {
                 // REMU: Remainder (unsigned)
+                // RISC-V spec: remainder by zero returns dividend
                 if rs2_val == 0 {
-                    // Remainder by zero returns dividend
                     rs1_val
                 } else {
-                    let result = rs1_val % rs2_val;
+                    let result = rs1_val.wrapping_rem(rs2_val);
                     if self.debug_mode {
                         println!("REMU: {} % {} = {}", rs1_val, rs2_val, result);
                     }
@@ -348,37 +364,42 @@ impl ExtendedCpu {
         let imm = ((inst as i32) >> 20) as i64;
         let addr = (self.read_register(rs1) as i64).wrapping_add(imm) as u64;
 
+        let raw_value = self.read_memory(addr, match funct3 {
+            0b000 | 0b100 => 1,
+            0b001 | 0b101 => 2,
+            0b010 | 0b110 => 4,
+            0b011 => 8,
+            _ => return Err(format!("Invalid load funct3: {}", funct3)),
+        });
+
         let value = match funct3 {
             0b000 => {
                 // LB: Load byte (sign-extended)
-                let byte_val = self.read_memory(addr, 1) as u8;
-                (byte_val as i8) as i64 as u64
+                (raw_value as i8) as i64 as u64
             },
             0b001 => {
                 // LH: Load halfword (sign-extended)
-                let half_val = self.read_memory(addr, 2) as u16;
-                (half_val as i16) as i64 as u64
+                (raw_value as i16) as i64 as u64
             },
             0b010 => {
                 // LW: Load word (sign-extended)
-                let word_val = self.read_memory(addr, 4) as u32;
-                (word_val as i32) as i64 as u64
+                (raw_value as i32) as i64 as u64
             },
             0b011 => {
                 // LD: Load doubleword (RV64 only)
-                self.read_memory(addr, 8)
+                raw_value
             },
             0b100 => {
                 // LBU: Load byte unsigned
-                self.read_memory(addr, 1) & 0xff
+                raw_value & 0xff
             },
             0b101 => {
                 // LHU: Load halfword unsigned
-                self.read_memory(addr, 2) & 0xffff
+                raw_value & 0xffff
             },
             0b110 => {
                 // LWU: Load word unsigned (RV64 only)
-                self.read_memory(addr, 4) & 0xffffffff
+                raw_value & 0xffffffff
             },
             _ => return Err(format!("Invalid load funct3: {}", funct3)),
         };
